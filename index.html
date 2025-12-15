@@ -561,7 +561,8 @@
             isCampaign: false,
             is2Player: false,
             campaignConfig: null,
-            archerShots: { player1: 0, player2: 0 }
+            archerShots: { player1: 0, player2: 0 },
+            wizardAttacksUsed: { player1: false, player2: false }
         };
 
         function generateCampaignConfig() {
@@ -797,6 +798,7 @@
             game.pendingMove = null;
             game.armiesToDeploy = getReinforcementCount(1);
             game.archerShots = { player1: 0, player2: 0 };
+            game.wizardAttacksUsed = { player1: false, player2: false };
             
             // Update player 2 label
             if (game.is2Player) {
@@ -1024,6 +1026,15 @@
             const opponent = game.currentPlayer === 1 ? 2 : 1;
             if (game.selectedCell === null) {
                 if (game.board[i].owner === game.currentPlayer && game.board[i].armies > 0) {
+                    // Check if selecting a wizard that already attacked
+                    if (game.board[i].isWizard) {
+                        const wizardKey = game.currentPlayer === 1 ? 'player1' : 'player2';
+                        if (game.wizardAttacksUsed[wizardKey]) {
+                            showStatus(`Player ${game.currentPlayer}: Wizard has already attacked this turn!`);
+                            return;
+                        }
+                    }
+                    
                     game.selectedCell = i;
                     renderBoard();
                     showStatus(`Player ${game.currentPlayer}: Select enemy to attack`);
@@ -1105,6 +1116,11 @@
         function performWizardAttack(from, to) {
             playWizardSound();
             const ballColor = game.board[from].owner === 1 ? 'blue' : 'red';
+            
+            // Mark wizard as having attacked
+            const wizardKey = game.board[from].owner === 1 ? 'player1' : 'player2';
+            game.wizardAttacksUsed[wizardKey] = true;
+            
             animateMagicBall(from, to, ballColor, () => {
                 const remaining = game.board[to].armies - 2;
                 const playerName = game.board[from].owner === 1 ? 'Player 1' : 'Player 2';
@@ -1239,6 +1255,10 @@
                 game.wizardMovesRemaining = 2;
                 game.selectedCell = null;
                 game.armiesToDeploy = getReinforcementCount(game.currentPlayer);
+                
+                // Reset wizard attack tracker for new turn
+                game.wizardAttacksUsed = { player1: false, player2: false };
+                
                 updateUI();
                 renderBoard();
                 
@@ -1571,12 +1591,14 @@
             }
             
             // AI wizard attacks - prioritize player's wizards and archers
+            // Only allow ONE wizard attack per turn
             const wizards = game.board
                 .map((c, i) => c.owner === 2 && c.isWizard ? i : -1)
                 .filter(i => i !== -1);
             
-            wizards.forEach(wiz => {
-                if (game.gameOver) return;
+            // Only attack with the first wizard (one attack per turn)
+            if (wizards.length > 0 && !game.gameOver) {
+                const wiz = wizards[0]; // Use only first wizard
                 
                 const targets = [];
                 for (let j = 0; j < BOARD_SIZE; j++) {
@@ -1598,7 +1620,7 @@
                     targets.sort((a, b) => b.priority - a.priority);
                     performWizardAttack(wiz, targets[0].i);
                 }
-            });
+            }
         }
 
         function aiArcherPhase() {
